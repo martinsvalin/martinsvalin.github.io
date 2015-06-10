@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+
+    <title>You won’t believe what happens in `next`</title>
+
+    <meta name="description" content="A framework for easily creating beautiful presentations using HTML">
+    <meta name="author" content="Hakim El Hattab">
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/black.css" id="theme">
+    <link rel="stylesheet" href="css/tweaks.css">
+
+    <!-- Code syntax highlighting -->
+    <link rel="stylesheet" href="lib/css/zenburn.css">
+
+    <!-- Printing and PDF exports -->
+    <script>
+      var link = document.createElement( 'link' );
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+      document.getElementsByTagName( 'head' )[0].appendChild( link );
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+  </head>
+
+  <body>
+
+    <div class="reveal">
+
+      <!-- Any section element inside of this container is displayed as a slide -->
+      <div class="slides">
+        <section>
+          <h1>You won’t believe what happens in `next`</h1>
+          <h3>The tale of an unmerged Pull Request</h3>
+          <p>
+            <small>By <a href="http://github.com/martinsvalin">Martin Svalin</a> / <a href="http://twitter.com/martinsvalin">@martinsvalin</a></small>
+          </p>
+        </section>
+
+        <section>
+          <section>
+            <p>
+              <i>…in which we learn about ranges, protocols, reducers, guard restrictions and more.</i>
+            </p>
+          </section>
+          <section>
+            <h2>Elixir Protocols</h2>
+            <p>A quick primer</p>
+          </section>
+          <section>
+            <h2>The built-in protocols</h2>
+            <ul>
+              <li><span style="width: 7em; display: inline-block">Enumerable</span> All hail the mighty Enum.</li>
+              <li><span style="width: 7em; display: inline-block">String.Chars</span> To string, or not to string.</li>
+              <li><span style="width: 7em; display: inline-block">List.Chars</span> Not to string.</li>
+              <li><span style="width: 7em; display: inline-block">Inspect</span> Inspect your gadget.</li>
+              <li><span style="width: 7em; display: inline-block">Collectable</span> If you’re into it.</li>
+              <li><span style="width: 7em; display: inline-block">Access</span> Denied. No, really. It’s deprecated.</li>
+              <li><span style="width: 7em; display: inline-block">Range.Iterator</span> Next up.</li>
+            </ul>
+          </section>
+          <section>
+            <h2>You can build your own</h2>
+            <pre class="stretch"><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defprotocol Blank do
+  @doc "Returns true if data is considered blank/empty"
+  def blank?(data)
+end
+
+# Just the atoms false and nil are blank
+defimpl Blank, for: Atom do
+  def blank?(false), do: true
+  def blank?(nil),   do: true
+  def blank?(_),     do: false
+end
+
+# Just empty list is blank
+defimpl Blank, for: List do
+  def blank?([]), do: true
+  def blank?(_),  do: false
+end
+            </code></pre>
+            <p><small>(From <a href="http://elixir-lang.org/getting-started/protocols.html">http://elixir-lang.org/getting-started/protocols.html</a>)</small></p>
+          </section>
+          <section>
+            <h2>Under the hood</h2>
+            <p>It’s modules all the way down.</p>
+            <pre class="stretch"><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+# In lib/elixir/lib/protocol.ex
+def __protocol__(name, [do: block]) do
+  quote do
+    defmodule unquote(name) do  # base protocol module, e.g. Blank
+      ...
+      unquote(block) # Your protocol rules
+      unquote(after_defprotocol) # implementation modules, e.g. Blank.List
+    end
+  end
+end
+
+iex> Blank.blank? [] # => true
+iex> Blank.List.blank? [] # => true
+iex> Blank.Atom.blank? [] # => false
+iex> Blank.impl_for [] # => Blank.List
+
+            </code></pre>
+            <p><small>(From <a href="http://elixir-lang.org/getting-started/protocols.html">http://elixir-lang.org/getting-started/protocols.html</a>)</small></p>
+            <aside class="notes">
+              `defprotocol SomeName` => `defmodule SomeName`.
+              <br>
+              `defimpl SomeName, for: Type` => `defmodule SomeName.Type`.
+
+            </aside>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h2>I ❤️ Expressiveness</h2>
+            <p>Can we express <code>monday..friday</code> in Elixir?</p>
+            <p>What would we need?</p>
+            <p>A <code>Weekday</code> struct and a <code>Range.Iterator</code> implementation.</p>
+          </section>
+          <section>
+            <h2>Weekday struct</h2>
+            <pre><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defmodule Weekday do
+  defstruct name: nil, day: nil
+
+  def monday,    do: %Weekday{name: "Monday",    day: 1}
+  def tuesday,   do: %Weekday{name: "Tuesday",   day: 2}
+  def wednesday, do: %Weekday{name: "Wednesday", day: 3}
+  def thursday,  do: %Weekday{name: "Thursday",  day: 4}
+  def friday,    do: %Weekday{name: "Friday",    day: 5}
+  def saturday,  do: %Weekday{name: "Saturday",  day: 6}
+  def sunday,    do: %Weekday{name: "Sunday",    day: 7}
+end
+            </code></pre>
+          </section>
+          <section>
+            <h2>Implement Range.Iterator</h2>
+            <pre class="stretch"><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defimpl Range.Iterator, for: Weekday do
+  def next(_first, _range) do
+    fn weekday ->
+      case weekday.day do
+        1 -> Weekday.tuesday
+        2 -> Weekday.wednesday
+        3 -> Weekday.thursday
+        4 -> Weekday.friday
+        5 -> Weekday.saturday
+        6 -> Weekday.sunday
+        7 -> Weekday.monday
+      end
+    end
+  end
+
+  def count(_first, _range) do
+    # Part of the protocol, but not our focus today
+  end
+end
+            </code></pre>
+          </section>
+          <section>
+            <h2>That’s all it takes, folks!</h2>
+            <pre><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+iex> import Weekday
+iex> monday..friday
+%Weekday{name: "Monday", day: 1}..%Weekday{name: "Friday", day: 5}
+            </code></pre>
+            <h2 class="fragment">Just kidding!</h2>
+            <pre class="fragment"><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+iex> import Weekday
+iex> monday..friday |> Enum.to_list
+# ...infinite loop
+            </code></pre>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h2>Misbehaving reduce</h2>
+            <p>Let’s dig through the call stack</p>
+            <ul>
+              <li><code>Enum.to_list</code> →
+              <li><code>Enum.reverse</code> →
+              <li><code>Enum.reduce</code> →
+              <li><code>Enumerable.reduce</code> →
+              <li><code>Enumerable.impl_for!(monday..friday)</code> →
+              <li><code>Enumerable.Range.reduce</code> →
+              <li>∞⌛️
+            </ul>
+          </section>
+          <section>
+            <h2><code>Enumerable.Range.reduce</code></h2>
+            <pre class="stretch"><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defimpl Enumerable, for: Range do
+  def reduce(x .. y = range, acc, fun) do
+    reduce(x, y, acc, fun, Range.Iterator.next(x, range), x >= y)
+  end
+
+  # defp reduce(_x, _y, {:halt, acc}, _fun, _next, _up), do: ...
+  # defp reduce(x, y, {:suspend, acc}, fun, next, up), do: ...
+
+  defp reduce(x, y, {:cont, acc}, fun, next, true) when x <= y do
+    reduce(next.(x), y, fun.(x, acc), fun, next, true)
+  end
+
+  defp reduce(x, y, {:cont, acc}, fun, next, false) when x >= y do
+    reduce(next.(x), y, fun.(x, acc), fun, next, false)
+  end
+
+  defp reduce(_, _, {:cont, acc}, _fun, _next, _up) do
+    {:done, acc}
+  end
+end
+            </code></pre>
+          </section>
+          <section>
+            <h2>The problem: <code><=</code> and <code>>=</code></h2>
+            <p><code>Enumerable.Range.reduce</code> compares the current and last values with &lt;= and &gt;=.</p>
+            <p>Is <code>%Weekday{name: "Monday", day: 1}</code> <= <code>%Weekday{name: "Friday", day: 5}</code>?</p>
+            <p>Do all weekdays compare as expected?</p><p>Are we guaranteed to finish reducing?</p>
+            <p>Sadly, no. 🐼</p>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h2>Let’s fix <code>reduce</code></h2>
+            <p>
+              Structs can’t be reliably compared with <code>>=</code> or <code><=</code>, but they <em>can</em> be compared for equality.
+            </p>
+            <p>Can we refactor <code>Enumerable.Range.reduce</code> to only check equality?</p>
+          </section>
+          <section>
+            <h2>First attempt</h2>
+            <pre class="stretch"><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defimpl Enumerable, for: Range do
+  def reduce(x .. y = range, acc, fun) do
+    reduce(x, y, acc, fun, Range.Iterator.next(x, range))
+  end
+
+  # defp reduce(_x, _y, {:halt, acc}, _fun, _next), do: ...
+  # defp reduce(x, y, {:suspend, acc}, fun, next), do: ...
+
+  defp reduce(last, last, {:cont, acc}, fun, _next) do
+    # Ranges are inclusive, so run `fun` for the last value.
+    {:cont, result} = fun.(last, acc)
+    {:done, result}
+  end
+
+  defp reduce(x, y, {:cont, acc}, fun, next) do
+    reduce(next.(x), y, fun.(x, acc), fun, next)
+  end
+end
+            </code></pre>
+            <p>💣 Off-by-one errors in Elixir <code>Stream</code>-related tests. 💣</p>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h2>We need to talk about reducers</h2>
+            <p>
+              Remember those <code>{:cont, acc}</code>, <code>{:halt, acc}</code>
+              and <code>{:suspend, acc}</code> tuples?
+            </p>
+            <p>
+              These are the accumulators <code>Enumerable.reduce</code> will accept. The reducing function, the <em>reducer</em>, is expected to return one of them.
+            </p>
+            <p>
+              They make <code>reduce</code> more flexible. Halting and suspending is important for example in <code>Enum.take</code> and <code>Stream</code>.
+            </p>
+          </section>
+          <section>
+            <h2>Example: <code>Enumerable.List</code></h2>
+            <pre><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defimpl Enumerable, for: List do
+  def reduce(_, {:halt, acc}, _fun) do
+    {:halted, acc}
+  end
+
+  def reduce(list, {:suspend, acc}, fun) do
+    {:suspended, acc, &reduce(list, &1, fun)}
+  end
+
+  def reduce([], {:cont, acc}, _fun) do
+    {:done, acc}
+  end
+
+  def reduce([h|t], {:cont, acc}, fun) do
+    reduce(t, fun.(h, acc), fun)
+  end
+end
+            </code></pre>
+          </section>
+          <section>
+            <h2>Why my first attempt 💣ed</h2>
+            <pre><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defp reduce(last, last, {:cont, acc}, fun, _next) do
+  # Ranges are inclusive, so run `fun` for the last value.
+  {:cont, result} = fun.(last, acc)
+  {:done, result}
+end
+            </code></pre>
+            <p>
+              It doesn’t respect <code>:halt</code> or <code>:suspend</code>.
+            </p>
+            <p>
+              <small>This took me <em>hours</em> to solve. Classic case of going to bed and only then my brain works out a solution.</small>
+            </p>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h2>Let’s fix <code>reduce</code>... again</h2>
+            <p>
+              We must respect <code>:halt</code> and <code>:suspend</code>. The key is to recurse on the last element as well.
+            </p>
+            <p>
+              So we re-introduce the 6th element. It flagged the range direction before: up or down. Now it flags “are we done?”.
+            </p>
+          </section>
+          <section>
+            <h2>Second attempt</h2>
+            <pre class="stretch"><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defimpl Enumerable, for: Range do
+  def reduce(x .. y = range, acc, fun) do
+    reduce(x, y, acc, fun, Range.Iterator.next(x, range), false)
+  end
+
+  # defp reduce(_x, _y, {:halt, acc}, _fun, _next, _done), do: ...
+  # defp reduce(x, y, {:suspend, acc}, fun, next, done), do: ...
+
+  defp reduce(y, y, {:cont, acc}, fun, next, false) do
+    reduce(y, y, fun.(y, acc), fun, next, true) # <- behold!
+  end
+
+  defp reduce(x, y, {:cont, acc}, fun, next, false) do
+    reduce(next.(x), y, fun.(x, acc), fun, next, false)
+  end
+
+  defp reduce(_, _, {:cont, acc}, _fun, _next, true) do
+    {:done, acc}
+  end
+end
+            </code></pre>
+            <p>All tests are <span style="color: limegreen">green</code>!</p>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h2>Pull Request time!</h2>
+            <p>
+              <img src="pr-created.png" alt="Create a Pull Request agains elixir-lang/elixir">
+            </p>
+            <p class="fragment">
+              alas...<br>
+              <img src="pr-comment-by-jose.png" alt="José Valim comments, and explains guards are a problem.">
+            </p>
+          </section>
+          <section>
+            <h2>But can’t we fix <code>x in y..z</code>?</h2>
+            <p class="fragment">
+              Nope.<br>
+              <img src="pr-comment-by-eric.png" alt="Eric Meadows-Jönsson comments, explaining there’s currently no way to fix this."><br>
+              😭😭😭😭😭
+            </p>
+          </section>
+        </section>
+
+        <section>
+          <h2>I went to all this trouble!</h2>
+          <p>
+            Only to learn tons about protocols, ranges, reducers, guard restrictions, and more.
+          </p>
+          <p>
+            And I learned that both the Elixir source and team is very approachable.
+          </p>
+          <p class="fragment">
+            I hope you did too.
+            <br><br>
+            Thank you.
+          </p>
+        </section>
+
+        <section style="text-align: left">
+          <h1>THE END</h1>
+          <ul>
+            <li>Read the <a href="https://github.com/elixir-lang/elixir/pull/3374" title="Remove Enumerable.Range.reduce's dependency on >= <= #3374">Pull Request</a> comments.</li>
+            <li>More <a href="http://blog.plataformatec.com.br/2015/05/introducing-reducees/">about iterators, reducers, iteratees and reducees</a>, by José Valim.</li>
+          </ul>
+        </section>
+
+      </div>
+
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.js"></script>
+
+    <script>
+
+      // Full list of configuration options available at:
+      // https://github.com/hakimel/reveal.js#configuration
+      Reveal.initialize({
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+
+        transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+        // Optional reveal.js plugins
+        dependencies: [
+          { src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+          { src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+          { src: 'plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
+          { src: 'plugin/zoom-js/zoom.js', async: true },
+          { src: 'plugin/notes/notes.js', async: true }
+        ]
+      });
+
+    </script>
+
+  </body>
+</html>
