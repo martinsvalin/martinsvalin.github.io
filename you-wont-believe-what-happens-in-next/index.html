@@ -234,6 +234,23 @@ end
             <p>Do all weekdays compare as expected?</p><p>Are we guaranteed to finish reducing?</p>
             <p>Sadly, no. 🐼</p>
           </section>
+
+          <section>
+            <h2><code>Range.Iterator</code> does this!</h2>
+            <pre><code class="ruby haha just kidding its elixir" data-trim contenteditable>
+defimpl Range.Iterator, for: Integer do
+  def next(first, _ .. last) when is_integer(last) do
+    if last >= first do
+      &(&1 + 1)
+    else
+      &(&1 - 1)
+    end
+  end
+
+  def count(first, _ .. last) when is_integer(last), do: ...
+end
+            </code></pre>
+          </section>
         </section>
 
         <section>
